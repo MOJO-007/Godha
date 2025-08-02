@@ -43,20 +43,13 @@ export const HeroSection = () => {
             Premium spices, traditional recipes, and authentic ingredients delivered fresh to your doorstep
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+          <div className="flex justify-center items-center mb-12">
             <Button 
               size="lg" 
               onClick={scrollToProducts}
               className="bg-white text-primary hover:bg-white/90 shadow-glow px-8 py-4 text-lg font-semibold"
             >
               Shop Now
-            </Button>
-            <Button 
-              variant="outline" 
-              size="lg"
-              className="border-white text-white hover:bg-white hover:text-primary px-8 py-4 text-lg"
-            >
-              Learn More
             </Button>
           </div>
           
