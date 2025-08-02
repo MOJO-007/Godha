@@ -47,11 +47,11 @@ export const useCart = () => {
   };
 
   const generateWhatsAppMessage = () => {
-    const message = "Hello! I'd like to order the following items:\n\n" +
+    const message = "नमस्ते! I'd like to order the following items:\n\n" +
       cartItems.map(item => 
-        `• ${item.name} (Qty: ${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}`
+        `• ${item.name} (Qty: ${item.quantity}) - ₹${(item.price * item.quantity).toFixed(0)}`
       ).join('\n') +
-      `\n\nTotal: $${getCartTotal().toFixed(2)}`;
+      `\n\nTotal: ₹${getCartTotal().toFixed(0)}`;
     
     return encodeURIComponent(message);
   };

@@ -1,42 +1,57 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShoppingCart, Store } from "lucide-react";
+import { ShoppingCart, Utensils } from "lucide-react";
 import { ProductCard, Product } from "@/components/ProductCard";
 import { CartSidebar } from "@/components/CartSidebar";
+import { HeroSection } from "@/components/HeroSection";
 import { useCart } from "@/hooks/useCart";
 import { useToast } from "@/hooks/use-toast";
 
 // Import product images
-import headphonesImg from "@/assets/headphones.jpg";
-import smartphoneImg from "@/assets/smartphone.jpg";
-import coffeeMugImg from "@/assets/coffee-mug.jpg";
-import laptopImg from "@/assets/laptop.jpg";
+import garamMasalaImg from "@/assets/garam-masala.jpg";
+import basmatiRiceImg from "@/assets/basmati-rice.jpg";
+import dalMixImg from "@/assets/dal-mix.jpg";
+import turmericImg from "@/assets/turmeric.jpg";
+import chaiBlendImg from "@/assets/chai-blend.jpg";
+import pickleImg from "@/assets/pickle.jpg";
 
 const products: Product[] = [
   {
     id: "1",
-    name: "Premium Wireless Headphones",
-    price: 199.99,
-    image: headphonesImg,
+    name: "Premium Garam Masala",
+    price: 299,
+    image: garamMasalaImg,
   },
   {
     id: "2",
-    name: "Smartphone Pro Max",
-    price: 899.99,
-    image: smartphoneImg,
+    name: "Authentic Basmati Rice (5kg)",
+    price: 899,
+    image: basmatiRiceImg,
   },
   {
     id: "3",
-    name: "Premium Coffee Mug",
-    price: 24.99,
-    image: coffeeMugImg,
+    name: "Mixed Dal Combo Pack",
+    price: 649,
+    image: dalMixImg,
   },
   {
     id: "4",
-    name: "Ultra Thin Laptop",
-    price: 1299.99,
-    image: laptopImg,
+    name: "Pure Turmeric Powder",
+    price: 199,
+    image: turmericImg,
+  },
+  {
+    id: "5",
+    name: "Traditional Chai Blend",
+    price: 349,
+    image: chaiBlendImg,
+  },
+  {
+    id: "6",
+    name: "Homemade Mango Pickle",
+    price: 249,
+    image: pickleImg,
   },
 ];
 
@@ -67,24 +82,24 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-warm">
       {/* Header */}
-      <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="fixed top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
-            <Store className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold">My Store</h1>
+            <Utensils className="w-6 h-6 text-primary" />
+            <h1 className="text-xl font-bold text-primary">Spice Bazaar</h1>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsCartOpen(true)}
-            className="gap-2"
+            className="gap-2 hover:shadow-warm transition-all duration-200"
           >
             <ShoppingCart className="w-4 h-4" />
             Cart
             {getCartItemCount() > 0 && (
-              <Badge variant="secondary" className="ml-1">
+              <Badge variant="secondary" className="ml-1 bg-primary text-primary-foreground">
                 {getCartItemCount()}
               </Badge>
             )}
@@ -92,17 +107,20 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container py-8">
+      {/* Hero Section */}
+      <HeroSection />
+
+      {/* Products Section */}
+      <section id="products" className="container py-16">
         <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold mb-4">Our Products</h2>
+          <h2 className="text-4xl font-bold mb-4 text-foreground">Our Premium Products</h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Discover our curated collection of premium products. Add items to your cart and checkout instantly via WhatsApp.
+            Hand-selected authentic Indian spices and ingredients, sourced directly from farmers and traditional producers.
           </p>
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {products.map((product) => (
             <ProductCard
               key={product.id}
@@ -111,7 +129,7 @@ const Index = () => {
             />
           ))}
         </div>
-      </main>
+      </section>
 
       {/* Cart Sidebar */}
       <CartSidebar
