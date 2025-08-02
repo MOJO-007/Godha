@@ -71,9 +71,12 @@ export const HeroSection = () => {
       </div>
       
       {/* Scroll Indicator */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce">
-        <ArrowDown className="w-6 h-6 text-white/70" />
-      </div>
+      <button 
+        onClick={scrollToProducts}
+        className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce hover:text-white transition-colors cursor-pointer"
+      >
+        <ArrowDown className="w-6 h-6 text-white/70 hover:text-white transition-colors" />
+      </button>
     </section>
   );
 };
