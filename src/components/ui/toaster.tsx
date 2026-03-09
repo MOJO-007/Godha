@@ -14,8 +14,13 @@ export function Toaster() {
   return (
     <ToastProvider>
       {toasts.map(function ({ id, title, description, action, ...props }) {
+        const duration = props.duration || 5000;
         return (
-          <Toast key={id} {...props}>
+          <Toast 
+            key={id} 
+            {...props}
+            style={{ ...props.style, "--toast-duration": `${duration}ms` } as React.CSSProperties}
+          >
             <div className="grid gap-1">
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (
@@ -24,6 +29,7 @@ export function Toaster() {
             </div>
             {action}
             <ToastClose />
+            <div className="absolute bottom-0 left-0 h-1 bg-primary animate-shrink origin-left" />
           </Toast>
         )
       })}

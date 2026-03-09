@@ -1,14 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Product } from "@/components/ProductCard";
 import { CartItem } from "@/components/CartSidebar";
 
 export const useCart = () => {
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    const savedCart = localStorage.getItem("cartItems");
+    if (savedCart) {
+      try {
+        return JSON.parse(savedCart);
+      } catch (err) {
+        console.error("Failed to parse cart items from localStorage", err);
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // Save cart items to local storage whenever they change
+  useEffect(() => {
+    localStorage.setItem("cartItems", JSON.stringify(cartItems));
+  }, [cartItems]);
 
   const addToCart = (product: Product) => {
     setCartItems(prev => {
       const existingItem = prev.find(item => item.id === product.id);
-      
+
       if (existingItem) {
         return prev.map(item =>
           item.id === product.id
@@ -16,7 +32,7 @@ export const useCart = () => {
             : item
         );
       }
-      
+
       return [...prev, { ...product, quantity: 1 }];
     });
   };
@@ -26,7 +42,7 @@ export const useCart = () => {
       removeFromCart(id);
       return;
     }
-    
+
     setCartItems(prev =>
       prev.map(item =>
         item.id === id ? { ...item, quantity } : item
@@ -38,6 +54,10 @@ export const useCart = () => {
     setCartItems(prev => prev.filter(item => item.id !== id));
   };
 
+  const clearCart = () => {
+    setCartItems([]);
+  };
+
   const getCartTotal = () => {
     return cartItems.reduce((total, item) => total + item.price * item.quantity, 0);
   };
@@ -47,12 +67,12 @@ export const useCart = () => {
   };
 
   const generateWhatsAppMessage = () => {
-    const message = "नमस्ते! I'd like to order the following items:\n\n" +
-      cartItems.map(item => 
+    const message = "ನಮಸ್ಕಾರ! I'd like to order the following items:\n\n" +
+      cartItems.map(item =>
         `• ${item.name} (Qty: ${item.quantity}) - ₹${(item.price * item.quantity).toFixed(0)}`
       ).join('\n') +
       `\n\nTotal: ₹${getCartTotal().toFixed(0)}`;
-    
+
     return encodeURIComponent(message);
   };
 
@@ -61,6 +81,7 @@ export const useCart = () => {
     addToCart,
     updateQuantity,
     removeFromCart,
+    clearCart,
     getCartTotal,
     getCartItemCount,
     generateWhatsAppMessage

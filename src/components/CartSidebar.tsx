@@ -13,6 +13,7 @@ interface CartSidebarProps {
   cartItems: CartItem[];
   onUpdateQuantity: (id: string, quantity: number) => void;
   onRemoveItem: (id: string) => void;
+  onClearCart: () => void;
   onCheckout: () => void;
 }
 
@@ -22,6 +23,7 @@ export const CartSidebar = ({
   cartItems,
   onUpdateQuantity,
   onRemoveItem,
+  onClearCart,
   onCheckout
 }: CartSidebarProps) => {
   const total = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -52,11 +54,21 @@ export const CartSidebar = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
             {cartItems.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                Your cart is empty
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+                <ShoppingCart className="w-16 h-16 mb-6 text-muted-foreground/30" />
+                <p className="mb-6 font-medium text-lg text-foreground">Your cart is empty</p>
+                <Button 
+                  onClick={() => {
+                    onClose();
+                    document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  variant="default"
+                  className="rounded-full px-8"
+                >
+                  Start Shopping
+                </Button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -68,7 +80,7 @@ export const CartSidebar = ({
                       className="w-16 h-16 object-cover rounded"
                     />
                     <div className="flex-1 space-y-2">
-                      <h4 className="font-medium text-sm">{item.name}</h4>
+                       <h4 className="font-medium text-sm leading-tight line-clamp-2">{item.name}</h4>
                       <p className="text-primary font-semibold">
                         ₹{item.price.toFixed(0)}
                       </p>
@@ -108,20 +120,31 @@ export const CartSidebar = ({
             )}
           </div>
 
+          {/* Sticky Footer */}
           {cartItems.length > 0 && (
-            <div className="border-t p-4 space-y-4">
-            <div className="flex justify-between items-center text-lg font-semibold">
-              <span>Total:</span>
-              <span className="text-primary">₹{total.toFixed(0)}</span>
-            </div>
-              <Button 
-                onClick={onCheckout} 
-                className="w-full gap-2 bg-success hover:bg-success/90 text-success-foreground"
-                size="lg"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Checkout via WhatsApp
-              </Button>
+            <div className="border-t p-4 space-y-4 bg-background z-10 sticky bottom-0">
+              <div className="flex justify-between items-center text-lg font-semibold">
+                <span>Total:</span>
+                <span className="text-primary">₹{total.toFixed(0)}</span>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={onClearCart} 
+                  variant="outline"
+                  className="px-3 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                  title="Clear Cart"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+                <Button 
+                  onClick={onCheckout} 
+                  className="flex-1 gap-2 bg-success hover:bg-success/90 text-success-foreground"
+                  size="lg"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Checkout
+                </Button>
+              </div>
             </div>
           )}
         </div>
