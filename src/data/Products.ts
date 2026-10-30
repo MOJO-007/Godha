@@ -1,84 +1,93 @@
-import puliyogre from "@/assets/puliyogre.jpeg";
-import chutneyPowder from "@/assets/chutneyPowder.jpeg";
-import peanutPowder from "@/assets/peanutPowder.jpeg";
-import bisibelebathPowder from "@/assets/bisibeleBathPowder.jpeg";
-import vangiBathPowder from "@/assets/vangibathPowder.jpeg";
-import rasamPowder from "@/assets/rasamPowder.jpeg";
-import sambharPwoder from "@/assets/sambharPowder.jpeg";
-import dryFruitsLaddoo from "@/assets/dryFruitsLaddoo.jpeg";
-import kodbale from "@/assets/kodbale.jpeg";
-import maddurVade from "@/assets/maddurVade.jpeg";
 import { Product } from "@/components/ProductCard";
 
 export const products: Product[] = [
   {
     id: "1",
-    name: "Puliyogre Gojju (1Kg)",
+    name: "Puliyogre Gojju",
     price: 500,
-    image: puliyogre,
+    image: "/products/puliyogre.jpeg",
     category: "Gojju",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "2",
-    name: "Chutney Powder (1kg)",
+    name: "Chutney Powder",
     price: 600,
-    image: chutneyPowder,
+    image: "/products/chutneyPowder.jpeg",
     category: "Powders",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "3",
-    name: "Peanut Chutney Powder (1Kg)",
+    name: "Peanut Chutney Powder",
     price: 700,
-    image: peanutPowder,
+    image: "/products/peanutPowder.jpeg",
     category: "Powders",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "4",
     name: "Bisibele bath Powder",
     price: 199,
-    image: bisibelebathPowder,
+    image: "/products/bisibeleBathPowder.jpeg",
     category: "Powders",
+    max_order_quantity: 10,
   },
   {
     id: "5",
-    name: "Vangibath Powder (1Kg)",
+    name: "Vangibath Powder",
     price: 600,
-    image: vangiBathPowder,
+    image: "/products/vangibathPowder.jpeg",
     category: "Powders",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "6",
-    name: "Rasam Powder (1Kg)",
+    name: "Rasam Powder",
     price: 800,
-    image: rasamPowder,
+    image: "/products/rasamPowder.jpeg",
     category: "Powders",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "7",
-    name: "Sambhar Powder (1Kg)",
+    name: "Sambhar Powder",
     price: 800,
-    image: sambharPwoder,
+    image: "/products/sambharPowder.jpeg",
     category: "Powders",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "8",
-    name: "Dry Fruits Laddoo (1Kg)",
+    name: "Dry Fruits Laddoo",
     price: 1200,
-    image: dryFruitsLaddoo,
+    image: "/products/dryFruitsLaddoo.jpeg",
     category: "Sweets",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "9",
-    name: "Kodbale (1Kg)",
+    name: "Kodbale",
     price: 400,
-    image: kodbale,
+    image: "/products/kodbale.jpeg",
     category: "Snacks",
+    pack_size: "1 kg",
+    max_order_quantity: 10,
   },
   {
     id: "10",
-    name: "Maddur Vade (1Pcs)",
+    name: "Maddur Vade",
     price: 20,
-    image: maddurVade,
+    image: "/products/maddurVade.jpeg",
     category: "Snacks",
+    pack_size: "1 piece",
+    max_order_quantity: 10,
   },
 ];

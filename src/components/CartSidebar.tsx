@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Minus, Plus, ShoppingCart, Trash2, MessageCircle } from "lucide-react";
 import { Product } from "./ProductCard";
+import { getProductOrderLimit } from "@/lib/productStock";
 
 export interface CartItem extends Product {
   quantity: number;
@@ -99,6 +100,8 @@ export const CartSidebar = ({
                             variant="outline"
                             size="sm"
                             onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+                            disabled={item.quantity >= getProductOrderLimit(item)}
+                            aria-label={`Increase ${item.name} quantity`}
                             className="w-8 h-8 p-0"
                           >
                             <Plus className="w-3 h-3" />
