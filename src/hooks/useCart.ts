@@ -1,8 +1,22 @@
-import { useState, useEffect } from "react";
+import { createContext, createElement, ReactNode, useContext, useEffect, useState } from "react";
 import { Product } from "@/components/ProductCard";
 import { CartItem } from "@/components/CartSidebar";
+import { getProductOrderLimit } from "@/lib/productStock";
 
-export const useCart = () => {
+interface CartContextValue {
+  cartItems: CartItem[];
+  addToCart: (product: Product, quantity?: number) => void;
+  updateQuantity: (id: string, quantity: number) => void;
+  removeFromCart: (id: string) => void;
+  clearCart: () => void;
+  getCartTotal: () => number;
+  getCartItemCount: () => number;
+  generateWhatsAppMessage: () => string;
+}
+
+const CartContext = createContext<CartContextValue | null>(null);
+
+export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     const savedCart = localStorage.getItem("cartItems");
     if (savedCart) {
@@ -21,19 +35,26 @@ export const useCart = () => {
     localStorage.setItem("cartItems", JSON.stringify(cartItems));
   }, [cartItems]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantity = 1) => {
     setCartItems(prev => {
       const existingItem = prev.find(item => item.id === product.id);
+      const currentQuantity = existingItem?.quantity ?? 0;
+      const nextQuantity = Math.min(
+        currentQuantity + quantity,
+        getProductOrderLimit(product),
+      );
+
+      if (nextQuantity <= currentQuantity) return prev;
 
       if (existingItem) {
         return prev.map(item =>
           item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? { ...item, ...product, quantity: nextQuantity }
             : item
         );
       }
 
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: nextQuantity }];
     });
   };
 
@@ -45,7 +66,12 @@ export const useCart = () => {
 
     setCartItems(prev =>
       prev.map(item =>
-        item.id === id ? { ...item, quantity } : item
+        item.id === id
+          ? {
+              ...item,
+              quantity: Math.min(quantity, getProductOrderLimit(item)),
+            }
+          : item
       )
     );
   };
@@ -69,14 +95,14 @@ export const useCart = () => {
   const generateWhatsAppMessage = () => {
     const message = "ನಮಸ್ಕಾರ! I'd like to order the following items:\n\n" +
       cartItems.map(item =>
-        `• ${item.name} (Qty: ${item.quantity}) - ₹${(item.price * item.quantity).toFixed(0)}`
+        `• ${item.name}: ₹${item.price.toFixed(2)} × ${item.quantity} = ₹${(item.price * item.quantity).toFixed(2)}`
       ).join('\n') +
-      `\n\nTotal: ₹${getCartTotal().toFixed(0)}`;
+      `\n\nTotal: ₹${getCartTotal().toFixed(2)}`;
 
     return encodeURIComponent(message);
   };
 
-  return {
+  const value: CartContextValue = {
     cartItems,
     addToCart,
     updateQuantity,
@@ -86,4 +112,12 @@ export const useCart = () => {
     getCartItemCount,
     generateWhatsAppMessage
   };
+
+  return createElement(CartContext.Provider, { value }, children);
+};
+
+export const useCart = (): CartContextValue => {
+  const context = useContext(CartContext);
+  if (!context) throw new Error("useCart must be used within a CartProvider");
+  return context;
 };

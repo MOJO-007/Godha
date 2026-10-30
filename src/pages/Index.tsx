@@ -1,26 +1,34 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, Search } from "lucide-react";
 import { ProductCard, Product } from "@/components/ProductCard";
 import { CartSidebar } from "@/components/CartSidebar";
 import { HeroSection } from "@/components/HeroSection";
-import { useCart } from "@/hooks/useCart";
+import { useCart } from "@/hooks/useCart.ts";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { products } from "@/data/Products";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { listStoreProducts } from "@/lib/catalog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
-const categories = ["All", ...Array.from(new Set(products.map(p => p.category)))];
+import { formatProductStock, getProductOrderLimit } from "@/lib/productStock";
 
 const Index = () => {
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(
+    isSupabaseConfigured ? [] : products,
+  );
+  const [catalogError, setCatalogError] = useState("");
+  const [isCatalogLoading, setIsCatalogLoading] = useState(isSupabaseConfigured);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
+  const navigate = useNavigate();
   const {
     cartItems,
     addToCart,
@@ -28,53 +36,69 @@ const Index = () => {
     removeFromCart,
     clearCart,
     getCartItemCount,
-    generateWhatsAppMessage
   } = useCart();
   const { toast } = useToast();
+  const categories = ["All", ...Array.from(new Set(catalogProducts.map((product) => product.category)))];
 
-  const handleAddToCart = (product: Product) => {
-    addToCart(product);
-    toast({
-      title: "Added to cart",
-      description: `${product.name} has been added to your cart.`,
-      duration: 3000,
-    });
-  };
+  useEffect(() => {
+    let isMounted = true;
 
-  const handleCheckout = () => {
-    setIsCheckoutModalOpen(true);
-  };
-
-  const confirmCheckout = () => {
-    if (!customerName || !customerAddress) {
-      toast({
-        title: "Missing Information",
-        description: "Please provide your name and delivery address.",
-        variant: "destructive"
+    listStoreProducts()
+      .then((loadedProducts) => {
+        if (isMounted) setCatalogProducts(loadedProducts);
+      })
+      .catch((error: Error) => {
+        console.error("Failed to load the product catalog", error);
+        if (isMounted) setCatalogError("Products could not be loaded. Please try again later.");
+      })
+      .finally(() => {
+        if (isMounted) setIsCatalogLoading(false);
       });
-      return;
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const openProductDetails = (product: Product) => {
+    setSelectedProduct(product);
+    setSelectedQuantity(1);
+  };
+
+  const handleAddToCart = (product: Product, quantity = 1): boolean => {
+    const quantityInCart = cartItems.find((item) => item.id === product.id)?.quantity ?? 0;
+    const remainingLimit = getProductOrderLimit(product) - quantityInCart;
+    if (
+      product.is_available === false ||
+      remainingLimit <= 0 ||
+      quantity > remainingLimit
+    ) {
+      toast({
+        title: remainingLimit <= 0 ? "Maximum quantity reached" : "Product unavailable",
+        description: product.stock_quantity != null
+          ? `You can add up to ${getProductOrderLimit(product)} item(s) in total.`
+          : `You can add up to ${getProductOrderLimit(product)} item(s) per order.`,
+        variant: "destructive",
+      });
+      return false;
     }
 
-    const cartDetails = generateWhatsAppMessage();
-    const customerDetails = encodeURIComponent(`\n\n*Customer Details*\nName: ${customerName}\nAddress: ${customerAddress}`);
-    const finalMessage = `${cartDetails}${customerDetails}`;
-    const whatsappUrl = `https://wa.me/919611314403?text=${finalMessage}`;
-    window.open(whatsappUrl, '_blank');
-    setIsCheckoutModalOpen(false);
-    clearCart();
+    addToCart(product, quantity);
     toast({
-      title: "Order Processed",
-      description: "Redirecting to WhatsApp to complete your order.",
+      title: "Added to cart",
+      description: `${quantity} × ${product.name} added to your cart.`,
+      duration: 3000,
     });
+    return true;
   };
 
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
+    return catalogProducts.filter((product) => {
       const matchesCategory = activeCategory === "All" || product.category === activeCategory;
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, catalogProducts, searchQuery]);
 
   return (
     <div className="min-h-screen bg-gradient-warm">
@@ -142,7 +166,11 @@ const Index = () => {
         </div>
 
         {/* Products Grid */}
-        {filteredProducts.length === 0 ? (
+        {catalogError ? (
+          <div role="alert" className="text-center py-20 text-destructive">{catalogError}</div>
+        ) : isCatalogLoading ? (
+          <div className="text-center py-20 text-muted-foreground">Loading products...</div>
+        ) : filteredProducts.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground">
             No products found matching your criteria.
           </div>
@@ -173,12 +201,85 @@ const Index = () => {
                 <ProductCard
                   product={product}
                   onAddToCart={handleAddToCart}
+                  onViewDetails={openProductDetails}
                 />
               </motion.div>
             ))}
           </motion.div>
         )}
       </section>
+
+      <Dialog
+        open={selectedProduct !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedProduct(null);
+        }}
+      >
+        {selectedProduct && (
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{selectedProduct.name}</DialogTitle>
+              <DialogDescription>
+                {selectedProduct.description || selectedProduct.category}
+              </DialogDescription>
+            </DialogHeader>
+            <img
+              src={selectedProduct.image}
+              alt={selectedProduct.name}
+              className="max-h-64 w-full rounded-md object-cover"
+            />
+            <div className="space-y-2 text-sm">
+              <p><span className="font-medium">Price:</span> ₹{selectedProduct.price.toFixed(0)}</p>
+              <p><span className="font-medium">Stock:</span> {formatProductStock(selectedProduct)}</p>
+              <p><span className="font-medium">Maximum per order:</span> {getProductOrderLimit(selectedProduct)}</p>
+              {selectedProduct.pack_size && <p><span className="font-medium">Pack size:</span> {selectedProduct.pack_size}</p>}
+              {selectedProduct.ingredients && <p><span className="font-medium">Ingredients:</span> {selectedProduct.ingredients}</p>}
+              {selectedProduct.allergens && <p><span className="font-medium">Allergens:</span> {selectedProduct.allergens}</p>}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="product-quantity">Quantity</Label>
+              <select
+                id="product-quantity"
+                value={selectedQuantity}
+                onChange={(event) => setSelectedQuantity(Number(event.target.value))}
+                disabled={
+                  selectedProduct.is_available === false ||
+                  getProductOrderLimit(selectedProduct) <=
+                    (cartItems.find((item) => item.id === selectedProduct.id)?.quantity ?? 0)
+                }
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {Array.from(
+                  {
+                    length: Math.max(
+                      0,
+                      getProductOrderLimit(selectedProduct) -
+                        (cartItems.find((item) => item.id === selectedProduct.id)?.quantity ?? 0),
+                    ),
+                  },
+                  (_, index) => index + 1,
+                ).map((quantity) => (
+                  <option key={quantity} value={quantity}>{quantity}</option>
+                ))}
+              </select>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  if (handleAddToCart(selectedProduct, selectedQuantity)) setSelectedProduct(null);
+                }}
+                disabled={
+                  selectedProduct.is_available === false ||
+                  (getProductOrderLimit(selectedProduct) <=
+                    (cartItems.find((item) => item.id === selectedProduct.id)?.quantity ?? 0))
+                }
+              >
+                Add to Cart
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* Cart Sidebar */}
       <CartSidebar
@@ -188,47 +289,8 @@ const Index = () => {
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeFromCart}
         onClearCart={clearCart}
-        onCheckout={handleCheckout}
+        onCheckout={() => navigate("/checkout")}
       />
-      {/* Checkout Modal */}
-      <Dialog open={isCheckoutModalOpen} onOpenChange={setIsCheckoutModalOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Complete Your Order</DialogTitle>
-            <DialogDescription>
-              Please enter your details to complete the order via WhatsApp.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="John Doe"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="address">Delivery Address</Label>
-              <Input
-                id="address"
-                value={customerAddress}
-                onChange={(e) => setCustomerAddress(e.target.value)}
-                placeholder="123 Main St, City, Zip"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCheckoutModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmCheckout}>
-              Proceed to WhatsApp
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
