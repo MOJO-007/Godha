@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Minus, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,9 +8,30 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useCart } from "@/hooks/useCart.ts";
 import { listStoreProducts } from "@/lib/catalog";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { getProductOrderLimit } from "@/lib/productStock";
 import { Product } from "@/components/ProductCard";
+import { loadRazorpayCheckout, RazorpayResponse } from "@/lib/razorpay";
+
+interface PaymentOrder {
+  id: string;
+  customerName: string;
+  customerAddress: string;
+  amount: number;
+  paymentId: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
+}
+
+interface PendingPaymentVerification {
+  orderId: string;
+  paymentId: string;
+  signature: string;
+}
 
 const Checkout = () => {
   const navigate = useNavigate();
@@ -27,6 +48,8 @@ const Checkout = () => {
   const [customerName, setCustomerName] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState<PaymentOrder | null>(null);
+  const [pendingVerification, setPendingVerification] = useState<PendingPaymentVerification | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -65,7 +88,34 @@ const Checkout = () => {
       item.quantity > getProductOrderLimit(currentProduct);
   });
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const verifyPayment = async (payment: PendingPaymentVerification) => {
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+
+    const { data, error } = await supabase.functions.invoke("verify-razorpay-payment", {
+      body: {
+        razorpay_order_id: payment.orderId,
+        razorpay_payment_id: payment.paymentId,
+        razorpay_signature: payment.signature,
+      },
+    });
+
+    if (error) throw error;
+    if (!data?.order) throw new Error("Payment verification returned no order.");
+
+    const verifiedOrder = data.order as PaymentOrder;
+    clearCart();
+    setPendingVerification(null);
+    setPaymentOrder(verifiedOrder);
+    setIsSubmitting(false);
+    toast({
+      title: "Payment successful",
+      description: "Your payment is confirmed. Send your order details to us on WhatsApp.",
+    });
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (cartItems.length === 0) return;
 
@@ -87,45 +137,102 @@ const Checkout = () => {
       return;
     }
 
-    setIsSubmitting(true);
-    const orderLines = cartItems.map((item) => {
-      const currentProduct = productsById.get(item.id)!;
-      const lineTotal = currentProduct.price * item.quantity;
-      return `• ${currentProduct.name}: ₹${currentProduct.price.toFixed(2)} × ${item.quantity} = ₹${lineTotal.toFixed(2)}`;
-    }).join("\n");
-    const message = [
-      "ನಮಸ್ಕಾರ! I'd like to order the following items:",
-      "",
-      orderLines,
-      "",
-      `Subtotal: ₹${subtotal.toFixed(2)}`,
-      `Total: ₹${subtotal.toFixed(2)}`,
-      "",
-      "*Customer Details*",
-      `Name: ${customerName.trim()}`,
-      `Address: ${customerAddress.trim()}`,
-    ].join("\n");
-    const whatsappUrl = `https://wa.me/919611314403?text=${encodeURIComponent(message)}`;
-    const whatsappWindow = window.open(whatsappUrl, "_blank");
-
-    if (!whatsappWindow) {
-      setIsSubmitting(false);
+    if (!isSupabaseConfigured || !supabase) {
       toast({
-        title: "WhatsApp did not open",
-        description: "Allow pop-ups for this site and try again. Your cart is still saved.",
+        title: "Online payment is not configured",
+        description: "Please contact us on WhatsApp to place your order.",
         variant: "destructive",
       });
       return;
     }
 
-    whatsappWindow.opener = null;
-    clearCart();
-    toast({
-      title: "Order details ready",
-      description: "WhatsApp opened with your itemized order. Send the message to place your order.",
-    });
-    navigate("/");
+    setIsSubmitting(true);
+    try {
+      await loadRazorpayCheckout();
+      const { data, error } = await supabase.functions.invoke("create-razorpay-order", {
+        body: {
+          customerName: customerName.trim(),
+          customerAddress: customerAddress.trim(),
+          items: cartItems.map(({ id, quantity }) => ({ id, quantity })),
+        },
+      });
+      if (error) throw error;
+      if (!data?.orderId || !data?.keyId || !data?.amount || !data?.currency) {
+        throw new Error("The payment service returned an invalid order.");
+      }
+
+      const checkout = new window.Razorpay({
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency,
+        name: "Godha Food Products",
+        description: "Your Godha order",
+        order_id: data.orderId,
+        prefill: { name: customerName.trim() },
+        theme: { color: "#7c2d12" },
+        handler: async (response: RazorpayResponse) => {
+          const verification = {
+            orderId: response.razorpay_order_id,
+            paymentId: response.razorpay_payment_id,
+            signature: response.razorpay_signature,
+          };
+          setPendingVerification(verification);
+          try {
+            await verifyPayment(verification);
+          } catch (error) {
+            console.error("Failed to verify Razorpay payment", error);
+            setIsSubmitting(false);
+            toast({
+              title: "Payment verification is pending",
+              description: "Your payment was submitted, but we couldn't confirm it yet. Retry verification before starting another payment.",
+              variant: "destructive",
+            });
+          }
+        },
+        modal: {
+          ondismiss: () => setIsSubmitting(false),
+        },
+      });
+      checkout.on("payment.failed", (response) => {
+        setIsSubmitting(false);
+        toast({
+          title: "Payment failed",
+          description: response.error.description || "Please try again or choose another payment method.",
+          variant: "destructive",
+        });
+      });
+      checkout.open();
+    } catch (error) {
+      console.error("Failed to start Razorpay checkout", error);
+      setIsSubmitting(false);
+      toast({
+        title: "Unable to start payment",
+        description: "Please try again. Your cart is still saved.",
+        variant: "destructive",
+      });
+    }
   };
+
+  const whatsappUrl = useMemo(() => {
+    if (!paymentOrder) return "";
+    const orderLines = paymentOrder.items.map((item) =>
+      `• ${item.name}: ₹${item.unitPrice.toFixed(2)} × ${item.quantity} = ₹${item.lineTotal.toFixed(2)}`
+    ).join("\n");
+    const message = [
+      "ನಮಸ್ಕಾರ! I've paid for this order:",
+      "",
+      orderLines,
+      "",
+      `Total paid: ₹${(paymentOrder.amount / 100).toFixed(2)}`,
+      `Payment ID: ${paymentOrder.paymentId}`,
+      `Order ID: ${paymentOrder.id}`,
+      "",
+      "*Customer Details*",
+      `Name: ${paymentOrder.customerName}`,
+      `Address: ${paymentOrder.customerAddress}`,
+    ].join("\n");
+    return `https://wa.me/919611314403?text=${encodeURIComponent(message)}`;
+  }, [paymentOrder]);
 
   return (
     <main className="min-h-screen bg-gradient-warm px-4 py-8">
@@ -135,10 +242,48 @@ const Checkout = () => {
         </Link>
         <h1 className="mb-2 text-3xl font-bold text-primary">Checkout</h1>
         <p className="mb-8 text-muted-foreground">
-          Review your order and continue to WhatsApp to confirm it. Payment is not collected on this page.
+          Review your order and pay securely with Razorpay.
         </p>
 
-        {cartItems.length === 0 ? (
+        {paymentOrder ? (
+          <Card>
+            <CardContent className="space-y-5 py-10 text-center">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-green-600" />
+              <div>
+                <h2 className="text-xl font-semibold">Payment confirmed</h2>
+                <p className="mt-2 text-muted-foreground">
+                  ₹{(paymentOrder.amount / 100).toFixed(2)} paid · Order {paymentOrder.id}
+                </p>
+              </div>
+              <Button asChild>
+                <a href={whatsappUrl} target="_blank" rel="noreferrer">
+                  Send order details on WhatsApp
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : pendingVerification ? (
+          <Card>
+            <CardContent className="space-y-4 py-10 text-center">
+              <h2 className="text-xl font-semibold">Confirming your payment</h2>
+              <p className="text-muted-foreground">
+                Your payment was submitted. Verify it before trying another payment.
+              </p>
+              <Button
+                onClick={() => verifyPayment(pendingVerification).catch((error: Error) => {
+                  console.error("Failed to verify Razorpay payment", error);
+                  toast({
+                    title: "Payment verification is still pending",
+                    description: "Please retry shortly or contact us on WhatsApp with your payment ID.",
+                    variant: "destructive",
+                  });
+                })}
+              >
+                Retry verification
+              </Button>
+            </CardContent>
+          </Card>
+        ) : cartItems.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-center">
               <p className="mb-4 text-muted-foreground">Your cart is empty.</p>
@@ -273,8 +418,13 @@ const Checkout = () => {
                     size="lg"
                     disabled={isSubmitting || isLoadingProducts || Boolean(catalogError) || unavailableItems.length > 0}
                   >
-                    {isSubmitting ? "Opening WhatsApp..." : "Continue to WhatsApp"}
+                    {isSubmitting ? "Opening Razorpay..." : "Pay securely with Razorpay"}
                   </Button>
+                  {!isSupabaseConfigured && (
+                    <p className="text-xs text-muted-foreground">
+                      Online payments are unavailable until Supabase and Razorpay are configured.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>

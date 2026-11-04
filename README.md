@@ -32,9 +32,29 @@ The admin form also manages descriptions, pack size/net quantity, ingredients, a
 
 Click a product image or name to open its details dialog, review stock, and select the order quantity from a dropdown. Product names omit their pack quantities; set the actual pack size separately in `/admin`.
 
-The cart's Checkout button opens `/checkout`, where customers can review unit price × quantity = line total, adjust quantities, and enter their name and delivery address. Submitting opens WhatsApp with the itemized order; this is still a manual order confirmation flow and does not collect payment.
+The cart's Checkout button opens `/checkout`, where customers can review unit price × quantity = line total, adjust quantities, and enter their name and delivery address. Razorpay checkout creates the order through Supabase Edge Functions; the server recalculates prices from the active catalog, verifies the payment signature and captured amount, and saves the paid order. After payment, customers can send the saved order details to WhatsApp.
 
-The anon/publishable key is intended to be present in the browser. Row Level Security in `supabase/schema.sql` limits public access to reading active products and product images; only user IDs in `admin_users` can change products or upload images. Never put a Supabase `service_role` key in this frontend or in a `VITE_` variable.
+The anon/publishable key is intended to be present in the browser. Row Level Security in `supabase/schema.sql` limits public access to reading active products and product images; only user IDs in `admin_users` can change products or upload images. Never put a Supabase `service_role` key or the Razorpay key secret in this frontend or in a `VITE_` variable.
+
+### Razorpay test payments
+
+1. Apply `supabase/migrations/20261031_razorpay_orders.sql` to create the private order table.
+2. Set the Razorpay test Key ID and Key Secret as Supabase Edge Function secrets (do not put the secret in `.env` or share it in chat):
+
+   ```sh
+   supabase secrets set RAZORPAY_KEY_ID=your_test_key_id RAZORPAY_KEY_SECRET=your_test_key_secret
+   ```
+
+3. Deploy both payment functions:
+
+   ```sh
+   supabase functions deploy create-razorpay-order
+   supabase functions deploy verify-razorpay-payment
+   ```
+
+4. Ensure the site has its Supabase project URL and anon key configured, then redeploy the site. The payment form returns to WhatsApp only after the backend confirms the Razorpay payment is captured.
+
+Use the test keys and Razorpay's test payment details while validating. When going live, replace the Edge Function secrets with the live Key ID and Key Secret.
 
 ### Local development
 
