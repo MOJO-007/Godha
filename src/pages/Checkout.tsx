@@ -16,9 +16,11 @@ import { loadRazorpayCheckout, RazorpayResponse } from "@/lib/razorpay";
 interface PaymentOrder {
   id: string;
   customerName: string;
+  customerEmail: string;
   customerAddress: string;
   amount: number;
   paymentId: string;
+  confirmationEmailSent: boolean;
   items: Array<{
     name: string;
     quantity: number;
@@ -46,6 +48,7 @@ const Checkout = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(isSupabaseConfigured);
   const [catalogError, setCatalogError] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState<PaymentOrder | null>(null);
@@ -106,12 +109,14 @@ const Checkout = () => {
 
     const verifiedOrder = data.order as PaymentOrder;
     clearCart();
-    setPendingVerification(null);
+    setPendingVerification(verifiedOrder.confirmationEmailSent ? null : payment);
     setPaymentOrder(verifiedOrder);
     setIsSubmitting(false);
     toast({
       title: "Payment successful",
-      description: "Your payment is confirmed. Send your order details to us on WhatsApp.",
+      description: verifiedOrder.confirmationEmailSent
+        ? `Your confirmation email was sent to ${verifiedOrder.customerEmail}.`
+        : "Your payment is confirmed, but we couldn't send the confirmation email yet.",
     });
   };
 
@@ -152,6 +157,7 @@ const Checkout = () => {
       const { data, error } = await supabase.functions.invoke("create-razorpay-order", {
         body: {
           customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
           customerAddress: customerAddress.trim(),
           items: cartItems.map(({ id, quantity }) => ({ id, quantity })),
         },
@@ -168,7 +174,7 @@ const Checkout = () => {
         name: "Godha Food Products",
         description: "Your Godha order",
         order_id: data.orderId,
-        prefill: { name: customerName.trim() },
+        prefill: { name: customerName.trim(), email: customerEmail.trim() },
         theme: { color: "#7c2d12" },
         handler: async (response: RazorpayResponse) => {
           const verification = {
@@ -254,7 +260,32 @@ const Checkout = () => {
                 <p className="mt-2 text-muted-foreground">
                   ₹{(paymentOrder.amount / 100).toFixed(2)} paid · Order {paymentOrder.id}
                 </p>
+                <p className="mt-2 text-sm text-muted-foreground" role="status">
+                  {paymentOrder.confirmationEmailSent
+                    ? `Confirmation email sent to ${paymentOrder.customerEmail}.`
+                    : `We couldn't send a confirmation email to ${paymentOrder.customerEmail}.`}
+                </p>
               </div>
+              {!paymentOrder.confirmationEmailSent && pendingVerification && (
+                <Button
+                  variant="outline"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setIsSubmitting(true);
+                    void verifyPayment(pendingVerification).catch((error: Error) => {
+                      console.error("Failed to retry the order confirmation email", error);
+                      setIsSubmitting(false);
+                      toast({
+                        title: "Email confirmation is still pending",
+                        description: "Your payment is confirmed. Please contact us if the email does not arrive.",
+                        variant: "destructive",
+                      });
+                    });
+                  }}
+                >
+                  {isSubmitting ? "Retrying..." : "Retry email"}
+                </Button>
+              )}
               <Button asChild>
                 <a href={whatsappUrl} target="_blank" rel="noreferrer">
                   Send order details on WhatsApp
@@ -381,6 +412,18 @@ const Checkout = () => {
                       value={customerName}
                       onChange={(event) => setCustomerName(event.target.value)}
                       placeholder="Your name"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="checkout-email">Email for order confirmation</Label>
+                    <Input
+                      id="checkout-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={customerEmail}
+                      onChange={(event) => setCustomerEmail(event.target.value)}
+                      placeholder="you@example.com"
                     />
                   </div>
                   <div className="grid gap-2">

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Session } from "@supabase/supabase-js";
-import { ArrowLeft, Eye, EyeOff, Pencil, Plus } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, PackageCheck, Pencil, Plus, RefreshCw } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
   setProductActive,
 } from "@/lib/catalog";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { listAdminOrders, markOrderDispatched, StoreOrder } from "@/lib/orders";
 
 const emptyForm: ProductInput = {
   name: "",
@@ -40,6 +41,10 @@ const Admin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [catalog, setCatalog] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<StoreOrder[]>([]);
+  const [areOrdersLoading, setAreOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [dispatchingOrderId, setDispatchingOrderId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyForm);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | undefined>();
@@ -108,6 +113,31 @@ const Admin = () => {
       .catch((error: Error) => {
         console.error("Failed to load products for administration", error);
         if (isMounted) setPageError("Could not load products. Check the Supabase policies and try again.");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let isMounted = true;
+    setAreOrdersLoading(true);
+    listAdminOrders()
+      .then((loadedOrders) => {
+        if (isMounted) {
+          setOrders(loadedOrders);
+          setOrdersError("");
+        }
+      })
+      .catch((error: Error) => {
+        console.error("Failed to load orders for administration", error);
+        if (isMounted) setOrdersError("Could not load orders. Check the Supabase migration and try again.");
+      })
+      .finally(() => {
+        if (isMounted) setAreOrdersLoading(false);
       });
 
     return () => {
@@ -234,6 +264,37 @@ const Admin = () => {
     }
   };
 
+  const refreshOrders = async () => {
+    setAreOrdersLoading(true);
+    setOrdersError("");
+    try {
+      setOrders(await listAdminOrders());
+    } catch (error) {
+      console.error("Failed to refresh orders", error);
+      setOrdersError(error instanceof Error ? error.message : "Could not refresh orders.");
+    } finally {
+      setAreOrdersLoading(false);
+    }
+  };
+
+  const handleMarkDispatched = async (order: StoreOrder) => {
+    setDispatchingOrderId(order.id);
+    setOrdersError("");
+    try {
+      await markOrderDispatched(order.id);
+      setOrders((currentOrders) => currentOrders.map((currentOrder) =>
+        currentOrder.id === order.id
+          ? { ...currentOrder, status: "dispatched" }
+          : currentOrder
+      ));
+    } catch (error) {
+      console.error("Failed to mark order as dispatched", error);
+      setOrdersError(error instanceof Error ? error.message : "Could not update this order.");
+    } finally {
+      setDispatchingOrderId(null);
+    }
+  };
+
   const handleSignOut = async () => {
     if (!supabase) return;
 
@@ -295,6 +356,68 @@ const Admin = () => {
             <Button variant="outline" onClick={handleSignOut}>Sign out</Button>
           </section>
         ) : (
+          <>
+          <section className="mb-8 rounded-lg border bg-background p-6">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <h2 className="text-xl font-semibold">Orders ({orders.length})</h2>
+              <Button type="button" variant="outline" size="sm" onClick={refreshOrders} disabled={areOrdersLoading}>
+                <RefreshCw className={`h-4 w-4 ${areOrdersLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
+            {ordersError && <p role="alert" className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">{ordersError}</p>}
+            {areOrdersLoading && orders.length === 0 ? (
+              <p className="text-muted-foreground">Loading orders...</p>
+            ) : orders.length === 0 ? (
+              <p className="text-muted-foreground">No orders yet.</p>
+            ) : (
+              <ul className="space-y-4">
+                {orders.map((order) => (
+                  <li key={order.id} className="rounded-md border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{order.customer_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(order.created_at).toLocaleString()} · {order.razorpay_order_id}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-secondary px-3 py-1 text-sm capitalize">{order.status}</span>
+                        <span className="font-semibold">
+                          {new Intl.NumberFormat("en-IN", { style: "currency", currency: order.currency }).format(order.amount / 100)}
+                        </span>
+                      </div>
+                    </div>
+                    {order.customer_email && (
+                      <p className="mt-1 text-sm text-muted-foreground">{order.customer_email}</p>
+                    )}
+                    <p className="mt-3 whitespace-pre-wrap text-sm">{order.customer_address}</p>
+                    <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+                      {order.items.map((item, index) => (
+                        <li key={`${item.name}-${index}`}>{item.name} × {item.quantity} — ₹{item.lineTotal.toFixed(2)}</li>
+                      ))}
+                    </ul>
+                    {order.razorpay_payment_id && (
+                      <p className="mt-2 text-xs text-muted-foreground">Payment ID: {order.razorpay_payment_id}</p>
+                    )}
+                    {order.status === "paid" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-4"
+                        disabled={dispatchingOrderId === order.id}
+                        onClick={() => handleMarkDispatched(order)}
+                      >
+                        <PackageCheck className="h-4 w-4" />
+                        {dispatchingOrderId === order.id ? "Updating..." : "Mark dispatched"}
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <form onSubmit={handleSave} className="grid content-start gap-4 rounded-lg border bg-background p-6">
               <h2 className="text-xl font-semibold">{editingProductId ? "Edit product" : "Add a product"}</h2>
@@ -407,6 +530,7 @@ const Admin = () => {
               )}
             </section>
           </div>
+          </>
         )}
 
         {pageError && (

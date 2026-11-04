@@ -17,7 +17,7 @@ interface RazorpayCheckoutOptions {
   name: string;
   description: string;
   order_id: string;
-  prefill: { name: string };
+  prefill: { name: string; email?: string };
   theme: { color: string };
   handler: (response: RazorpayResponse) => void | Promise<void>;
   modal: { ondismiss: () => void };

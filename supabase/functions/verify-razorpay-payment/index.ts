@@ -6,6 +6,7 @@ interface StoredOrder {
   razorpay_order_id: string;
   razorpay_payment_id: string | null;
   customer_name: string;
+  customer_email: string | null;
   customer_address: string;
   items: Array<{
     name: string;
@@ -15,7 +16,113 @@ interface StoredOrder {
   }>;
   amount: number;
   currency: string;
-  status: "pending" | "paid";
+  status: "pending" | "paid" | "dispatched";
+  confirmation_email_sent_at: string | null;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] ?? character);
+}
+
+async function sendConfirmationEmail(
+  supabase: ReturnType<typeof createClient>,
+  order: StoredOrder,
+): Promise<boolean> {
+  if (order.confirmation_email_sent_at) return true;
+  if (!order.customer_email) {
+    console.error("Paid order has no customer email address.");
+    return false;
+  }
+
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  const fromEmail = Deno.env.get("RESEND_FROM_EMAIL");
+  if (!apiKey || !fromEmail) {
+    console.error("Resend email configuration is missing.");
+    return false;
+  }
+
+  const formattedAmount = new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: order.currency,
+  }).format(order.amount / 100);
+  const itemRows = order.items.map((item) =>
+    `<li>${escapeHtml(item.name)} × ${item.quantity} — ${escapeHtml(
+      new Intl.NumberFormat("en-IN", { style: "currency", currency: order.currency })
+        .format(item.lineTotal),
+    )}</li>`
+  ).join("");
+  const textItems = order.items.map((item) =>
+    `- ${item.name} x ${item.quantity}: ${new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: order.currency,
+    }).format(item.lineTotal)}`
+  ).join("\n");
+  const html = [
+    `<h1>Payment confirmed</h1>`,
+    `<p>Hi ${escapeHtml(order.customer_name)}, we received your payment. Your order is confirmed.</p>`,
+    `<p><strong>Order:</strong> ${escapeHtml(order.razorpay_order_id)}</p>`,
+    `<p><strong>Total paid:</strong> ${escapeHtml(formattedAmount)}</p>`,
+    `<h2>Items</h2><ul>${itemRows}</ul>`,
+    `<p><strong>Delivery address:</strong><br>${escapeHtml(order.customer_address).replace(/\n/g, "<br>")}</p>`,
+    `<p>We will update you when your order is dispatched.</p>`,
+  ].join("");
+  const text = [
+    "Payment confirmed",
+    `Hi ${order.customer_name}, we received your payment. Your order is confirmed.`,
+    `Order: ${order.razorpay_order_id}`,
+    `Total paid: ${formattedAmount}`,
+    "",
+    "Items:",
+    textItems,
+    "",
+    `Delivery address: ${order.customer_address}`,
+    "We will update you when your order is dispatched.",
+  ].join("\n");
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": `godha-order-confirmation-${order.id}`,
+      },
+      body: JSON.stringify({
+        from: `Godha Food Products <${fromEmail}>`,
+        to: [order.customer_email],
+        subject: `Payment confirmed — Godha order ${order.razorpay_order_id}`,
+        html,
+        text,
+      }),
+    });
+  } catch (error) {
+    console.error("Resend confirmation email request failed", error);
+    return false;
+  }
+  if (!response.ok) {
+    console.error("Resend rejected confirmation email", response.status);
+    return false;
+  }
+
+  const sentAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("orders")
+    .update({ confirmation_email_sent_at: sentAt })
+    .eq("id", order.id)
+    .is("confirmation_email_sent_at", null);
+  if (error) {
+    console.error("Failed to record confirmation email delivery", error);
+    return false;
+  }
+  order.confirmation_email_sent_at = sentAt;
+  return true;
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -91,7 +198,7 @@ Deno.serve(async (request: Request) => {
   });
   const { data: order, error: lookupError } = await supabase
     .from("orders")
-    .select("id, razorpay_order_id, razorpay_payment_id, customer_name, customer_address, items, amount, currency, status")
+    .select("id, razorpay_order_id, razorpay_payment_id, customer_name, customer_email, customer_address, items, amount, currency, status, confirmation_email_sent_at")
     .eq("razorpay_order_id", orderId)
     .maybeSingle();
   if (lookupError) {
@@ -100,16 +207,19 @@ Deno.serve(async (request: Request) => {
   }
   if (!order) return jsonResponse({ error: "Payment order was not found." }, 404);
   const storedOrder = order as StoredOrder;
-  if (storedOrder.status === "paid") {
+  if (storedOrder.status !== "pending") {
     if (storedOrder.razorpay_payment_id !== paymentId) {
       return jsonResponse({ error: "This order was paid with a different payment." }, 409);
     }
+    const confirmationEmailSent = await sendConfirmationEmail(supabase, storedOrder);
     return jsonResponse({ order: {
       id: storedOrder.razorpay_order_id,
       customerName: storedOrder.customer_name,
+      customerEmail: storedOrder.customer_email ?? "",
       customerAddress: storedOrder.customer_address,
       amount: storedOrder.amount,
       paymentId: storedOrder.razorpay_payment_id,
+      confirmationEmailSent,
       items: storedOrder.items,
     } });
   }
@@ -193,17 +303,26 @@ Deno.serve(async (request: Request) => {
       console.error("Failed to check Razorpay order status", currentOrderError);
       return jsonResponse({ error: "Could not confirm the payment." }, 500);
     }
-    if (currentOrder?.status !== "paid" || currentOrder.razorpay_payment_id !== paymentId) {
+    if (
+      !["paid", "dispatched"].includes(currentOrder?.status) ||
+      currentOrder.razorpay_payment_id !== paymentId
+    ) {
       return jsonResponse({ error: "This order was paid with a different payment." }, 409);
     }
   }
 
+  storedOrder.status = "paid";
+  storedOrder.razorpay_payment_id = paymentId;
+  const confirmationEmailSent = await sendConfirmationEmail(supabase, storedOrder);
+
   return jsonResponse({ order: {
     id: storedOrder.razorpay_order_id,
     customerName: storedOrder.customer_name,
+    customerEmail: storedOrder.customer_email ?? "",
     customerAddress: storedOrder.customer_address,
     amount: storedOrder.amount,
     paymentId,
+    confirmationEmailSent,
     items: storedOrder.items,
   } });
 });

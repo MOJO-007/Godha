@@ -22,6 +22,7 @@ Deno.serve(async (request: Request) => {
 
   let body: {
     customerName?: unknown;
+    customerEmail?: unknown;
     customerAddress?: unknown;
     items?: unknown;
   };
@@ -35,12 +36,19 @@ Deno.serve(async (request: Request) => {
   }
 
   const customerName = typeof body.customerName === "string" ? body.customerName.trim() : "";
+  const customerEmail = typeof body.customerEmail === "string" ? body.customerEmail.trim() : "";
   const customerAddress = typeof body.customerAddress === "string" ? body.customerAddress.trim() : "";
   if (customerName.length < 2 || customerName.length > 120) {
     return jsonResponse({ error: "Enter a valid customer name." }, 400);
   }
   if (customerAddress.length < 8 || customerAddress.length > 1000) {
     return jsonResponse({ error: "Enter a valid delivery address." }, 400);
+  }
+  if (
+    customerEmail.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)
+  ) {
+    return jsonResponse({ error: "Enter a valid email address for your order confirmation." }, 400);
   }
   if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50) {
     return jsonResponse({ error: "The order must contain between 1 and 50 items." }, 400);
@@ -146,6 +154,7 @@ Deno.serve(async (request: Request) => {
   const { error: saveError } = await supabase.from("orders").insert({
     razorpay_order_id: razorpayOrder.id,
     customer_name: customerName,
+    customer_email: customerEmail,
     customer_address: customerAddress,
     items: orderItems,
     amount,
